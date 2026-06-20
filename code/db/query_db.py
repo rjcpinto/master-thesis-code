@@ -1,13 +1,13 @@
 import duckdb
 import pandas as pd
 import sys
-import readline
+from prompt_toolkit import prompt
 
 def query_database(con, ml_query, output_name, is_show_tables):
     try:
         ml_dataframe = con.execute(ml_query).df()
 
-        print(f"\nQuery successful! Extracted {len(ml_dataframe)} rows and {len(ml_dataframe.columns)} features.")
+        print(f"\n Query successful! Extracted {len(ml_dataframe)} rows and {len(ml_dataframe.columns)} features.")
         if is_show_tables == "yes":
             # Print the whole thing if it's just a structural table
             print(ml_dataframe)
@@ -28,14 +28,14 @@ def query_database(con, ml_query, output_name, is_show_tables):
                 encoding='utf-8'
             )
             
-            print(f"Dataset saved to: {out_path}")
-            return True  # Returns True to tell the main loop to break
+            print(f"🎉 Dataset saved to: {out_path}")
+            return True  
         else:
             print("Dataset discarded. Let's try writing a new query.")
-            return False # Returns False so the main loop continues
+            return False 
                 
     except Exception as e:
-        print(f"\nError executing SQL query:\n{e}")
+        print(f"\n Error executing SQL query:\n{e}")
         print("Please fix the query and try again.")
         return False
 
@@ -44,47 +44,35 @@ def extract_ml_dataset(output_name, db_name):
     
     try:
         con = duckdb.connect(db_path, read_only=True)
-        print(f"Connected to the data warehouse: {db_name}.db")
+        print(f" Connected to the data warehouse: {db_name}.db")
     except Exception as e:
         print(f"Failed to connect to database: {e}")
         return
 
     while True:
         print("\n" + "="*50)
-        print("Input your SQL query. You can paste multiple lines.")
-        print("End your query with a semicolon ';' and press Enter.")
+        
+        print("Input your SQL query. You can use UP/DOWN arrows to navigate lines freely.")
+        print("When finished, press [Esc] followed by [Enter] to execute.")
         print("Type 'exit' to quit.")
-        print("To assess the structure of your tables, you can use 'SHOW TABLES;', 'DESCRIBE table_name;' and 'SELECT * FROM information_schema.columns;'")
+        print("Helpful commands: 'SHOW TABLES;', 'DESCRIBE table_name;', 'SELECT * FROM information_schema.columns;'")
         
-        query_lines = []
-            
-        while True:
-            prompt = "> " if not query_lines else "... "
-            line = input(prompt)
-            
-            if line.strip().lower() == 'exit':
-                print("Exiting...")
-                con.close()
-                return
-
-            query_lines.append(line)
-            
-            if ';' in line:
-                break
+        ml_query = prompt("\n> ", multiline=True)
         
-        ml_query = '\n'.join(query_lines)
-
+        if ml_query.replace(';', '').strip().lower() == 'exit':
+            print("Exiting...")
+            con.close()
+            return
+            
         if not ml_query.replace(';', '').strip():
             continue
 
-        # Correct way to check for structural queries
         ml_query_lower = ml_query.strip().lower()
         if ml_query_lower.startswith('show') or ml_query_lower.startswith('describe') or 'information_schema' in ml_query_lower:
             should_break = query_database(con, ml_query, output_name, is_show_tables="yes")
         else:
             should_break = query_database(con, ml_query, output_name, is_show_tables="no")
             
-        # If query_database returned True (meaning the user saved the file), break the infinite loop
         if should_break:
             break
 
