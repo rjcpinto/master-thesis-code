@@ -6,8 +6,8 @@ def build_data_warehouse(db_name):
     print(f"Connecting to database: {db_name}...")
     con = duckdb.connect(db_name)
 
-    sql_files = ['/Users/ricardo/Desktop/MECD/2ndYear/Thesis/code/db/create_dimensions.sql', 
-                 '/Users/ricardo/Desktop/MECD/2ndYear/Thesis/code/db/create_fact.sql']
+    sql_files = ['/Users/ricardo/Desktop/MECD/2ndYear/Thesis/code/db/schema/create_dimensions.sql', 
+                 '/Users/ricardo/Desktop/MECD/2ndYear/Thesis/code/db/schema/create_fact.sql']
 
     for sql_file in sql_files:
         if not os.path.exists(sql_file):
