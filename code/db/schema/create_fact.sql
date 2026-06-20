@@ -138,6 +138,6 @@ SELECT
     protvar.ESM1b_score,
     protvar."EVE_score(class)",
     protvar.popEVE_score
-FROM read_csv_auto('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/pop_data_missense_final.csv') pop
-FULL JOIN read_csv_auto('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_protvar_data.csv') protvar 
+FROM read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/pop_data_missense_final.csv', nullstr='NA') pop
+FULL JOIN read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_protvar_data.csv', nullstr='NA') protvar 
     ON pop.var_id = protvar.User_input;

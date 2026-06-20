@@ -1,6 +1,6 @@
 
 -- Population
-CREATE TABLE dim_variant_protein_impact (
+CREATE TABLE dim_populational (
     var_id VARCHAR,
     CHROM VARCHAR,
     POS INTEGER,
@@ -93,7 +93,7 @@ CREATE TABLE dim_variant_protein_impact (
 );
 
 -- Insert data into Population table
-INSERT INTO dim_variant_protein_impact 
+INSERT INTO dim_populational 
 SELECT 
     var_id, CHROM, POS, REF, ALT, avsnp151, "Func.refGene", "Gene.refGene", Allele, 
     Annotation, Gene_ID, Feature_Type, Feature_ID, Transcript_BioType, Rank, HGVS_c, 
@@ -112,14 +112,14 @@ SELECT
     integrated_confidence_value, phyloP100way_vertebrate, phyloP30way_mammalian, 
     phastCons100way_vertebrate, phastCons30way_mammalian, SiPhy_29way_logOdds, 
     regsnp_disease, regsnp_splicing_site, AA_pos
-FROM read_csv_auto('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/pop_data_missense_final.csv');
+FROM read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/pop_data_missense_final.csv', nullstr='NA');
 
 
 
 -- Variant-Protein impact
 CREATE TABLE dim_variant_protein_impact ( 
     User_input VARCHAR,
-    Chromosome INTEGER,
+    Chromosome VARCHAR,
     Coordinate INTEGER,
     ID VARCHAR,
     Reference_allele VARCHAR,
@@ -158,7 +158,7 @@ CREATE TABLE dim_variant_protein_impact (
 -- Insert data into Variant Protein Impact table
 INSERT INTO dim_variant_protein_impact 
 SELECT 
-    Chromosome, Coordinate, ID, Reference_allele, Alternative_allele, Notes, 
+    User_input, Chromosome, Coordinate, ID, Reference_allele, Alternative_allele, Notes, 
     Gene, Codon_change, Strand, Canonical_isoform_transcripts, MANE_transcript, 
     "Uniprot_canonical_isoform_(non_canonical)", Alternative_isoform_mappings, 
     Protein_name, Amino_acid_position, Amino_acid_change, Consequences, 
@@ -168,7 +168,7 @@ SELECT
     "Gnomad_allele_freq(ac;an;af)", Genomic_location, Cytogenetic_band, 
     Other_identifiers_for_the_variant, Diseases_associated_with_variant, 
     Variants_colocated_at_residue_position, Position_in_structures
-FROM read_csv_auto('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_protvar_data.csv');
+FROM read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_protvar_data.csv', nullstr='NA');
 
 
 
@@ -208,4 +208,4 @@ SELECT
     "Direction of effect", "PD/PK terms", "Multiple drugs And/or", "Population types", 
     "Population Phenotypes or diseases", "Multiple phenotypes or diseases And/or", 
     "Comparison Allele(s) or Genotype(s)", "Comparison Metabolizer types"
-FROM read_csv_auto('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_clinpgx_processed_dataset.csv');
+FROM read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/final_clinpgx_processed_dataset.csv', nullstr='NA');
