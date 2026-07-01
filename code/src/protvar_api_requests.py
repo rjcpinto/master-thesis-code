@@ -88,7 +88,7 @@ def download_results(request_id, output_filename):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download ProtVar results via API")
-    parser.add_argument("file_path", help="Path to your variant txt file.")
+    parser.add_argument("file_path", help="Path to your variant txt file [chr:pos:ref:alt].")
     parser.add_argument("email", help="Your e-mail address to receive the results.")
     parser.add_argument("output_filename", help="Name of the output file to save the results.")
     args = parser.parse_args()

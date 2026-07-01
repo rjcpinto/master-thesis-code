@@ -28,7 +28,7 @@ def query_database(con, ml_query, output_name, is_show_tables):
                 encoding='utf-8'
             )
             
-            print(f"🎉 Dataset saved to: {out_path}")
+            print(f"Dataset saved to: {out_path}")
             return True  
         else:
             print("Dataset discarded. Let's try writing a new query.")
