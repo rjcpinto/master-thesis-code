@@ -11,8 +11,14 @@ datasets_final/
 database/
 *.db
 
+
 # -----------------------------------
-# 2. NOTEBOOKS & PYTHON
+# 2. RESULTS
+# -----------------------------------
+results/
+
+# -----------------------------------
+# 3. NOTEBOOKS & PYTHON
 # -----------------------------------
 # Ignore Python cache and virtual environments
 __pycache__/
@@ -21,11 +27,15 @@ venv/
 env/
 .env
 
+# Ignoring intermediate Python scripts used by me
+*copy*
+script.py 
+
 # Ignore Jupyter notebook hidden checkpoints
 .ipynb_checkpoints/
 
 # -----------------------------------
-# 3. R PROGRAMMING
+# 4. R PROGRAMMING
 # -----------------------------------
 # Ignore R history and workspace data
 .Rhistory
@@ -34,7 +44,7 @@ env/
 .Rproj.user/
 
 # -----------------------------------
-# 4. OS HIDDEN FILES
+# 5. OS HIDDEN FILES
 # -----------------------------------
 # Mac and Windows junk files
 .DS_Store
@@ -42,7 +52,7 @@ Thumbs.db
 
 
 # -----------------------------------
-# 5. FILES
+# 6. FILES
 # -----------------------------------
 # Isolated files related with the thesis
 AcordoConfidencialidade_DAI.doc
@@ -55,3 +65,4 @@ Minuta_ContratoDAI.xsd
 Papers/
 Proposal/
 unsupervised_analysis.ipynb
+*RicardoPinto*
