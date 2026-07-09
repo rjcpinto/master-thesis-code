@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import joblib
 import pandas as pd
 import numpy as np
@@ -11,18 +12,18 @@ warnings.filterwarnings('ignore')
 from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score, classification_report, average_precision_score
+from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
-from pulearn import BaggingPuClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier
+from lightgbm import LGBMClassifier
+from pulearn import BaggingPuClassifier, PUStratifiedKFold
 import pathlib
 from pathlib import Path
-
 
 """
 Different imputation strategies for handling missing values in the dataset:
@@ -125,11 +126,22 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         explained_variance = sum(pca.explained_variance_ratio_)
         columns_labels = [f'PC{i+1}' for i in range(n_pca_components)]
         
+        pc1_var = pca.explained_variance_ratio_[0] * 100
+        pc2_var = pca.explained_variance_ratio_[1] * 100
+        
+        variance_df = pd.DataFrame({
+            'PC': columns_labels,
+            'explained_variance_ratio': pca.explained_variance_ratio_,
+            'explained_variance_percent': pca.explained_variance_ratio_ * 100,
+            'cumulative_variance_percent': np.cumsum(pca.explained_variance_ratio_) * 100
+        })
+        variance_df.to_csv(RESULTS_DIR / f"metrics/pca_variance_{name}.csv", index=False)
+        
         loadings = pd.DataFrame(pca.components_.T, columns=columns_labels, index=X.columns)
         loadings.to_csv(RESULTS_DIR / f"metrics/pca_loadings_{name}.csv")
 
-        plt.figure(figsize=(8, 12)) 
-        sns.heatmap(loadings, annot=False, cmap='RdBu_r', center=0, fmt='.2f')
+        plt.figure(figsize=(8, 12), facecolor='white') 
+        sns.heatmap(loadings, annot=False, cmap='seismic', center=0, fmt='.2f')
         plt.tight_layout() 
         plt.savefig(RESULTS_DIR / f"plots/pca_loadings_{name}.svg", bbox_inches='tight')
         plt.savefig(RESULTS_DIR / f"plots/pca_loadings_{name}.png", dpi=300, bbox_inches='tight')
@@ -156,7 +168,8 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
             kmeans.fit(X_pca) 
             wcss.append(kmeans.inertia_)
 
-        plt.plot(range(1, max_k_elbow), wcss, marker='o')
+        plt.figure(figsize=(10, 6), facecolor='white')
+        plt.plot(range(1, max_k_elbow), wcss, marker='o', color=sns.color_palette("tab10")[0])
         plt.xlabel('Number of clusters (k)')
         plt.ylabel('WCSS')
         plt.tight_layout()
@@ -183,9 +196,8 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         
         rf_importances.to_csv(RESULTS_DIR / f"metrics/kmeans_rf_importances_{name}.csv")
         
-        plt.figure(figsize=(10, 8))
-        sns.barplot(x=rf_importances.head(20).values, y=rf_importances.head(20).index, palette='viridis')
-        plt.title(f'Top 20 Features Driving K-Means Clusters ({name})')
+        plt.figure(figsize=(10, 8), facecolor='white')
+        sns.barplot(x=rf_importances.head(20).values, y=rf_importances.head(20).index, color=sns.color_palette("tab10")[0])
         plt.xlabel('Random Forest Feature Importance')
         plt.tight_layout()
         plt.savefig(RESULTS_DIR / f"plots/kmeans_rf_importance_{name}.svg", bbox_inches='tight')
@@ -203,15 +215,17 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         pca_viz = pd.DataFrame(data=X_pca[:, :2], columns=['PC1', 'PC2'])
         pca_viz['Cluster'] = cluster_labels
         
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(10, 8), facecolor='white')
         sns.scatterplot(x='PC1', 
                         y='PC2', 
                         hue='Cluster', 
                         data=pca_viz,
-                        palette='viridis', 
+                        palette='Dark2', 
                         s=60, alpha=0.7)
-        plt.savefig(RESULTS_DIR / f"plots/pca_scatter_{name}.svg", bbox_inches='tight')
-        plt.savefig(RESULTS_DIR / f"plots/pca_scatter_{name}.png", dpi=300, bbox_inches='tight')
+        plt.xlabel(f'PC1 ({pc1_var:.1f}%)')
+        plt.ylabel(f'PC2 ({pc2_var:.1f}%)')
+        plt.savefig(RESULTS_DIR / f"plots/pca_kmeans_{name}.svg", bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f"plots/pca_kmeans_{name}.png", dpi=300, bbox_inches='tight')
         plt.close()
         
         centroids_original_space = pca.inverse_transform(kmeans.cluster_centers_)
@@ -221,16 +235,36 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         
         
         if X_scaled.shape[0] > 50000:
-            print("\n -> Subsampling to 50,000 rows for DBSCAN & t-SNE to save memory...")
-            np.random.seed(42)
-            sub_idx = np.random.choice(X_scaled.shape[0], 50000, replace=False)
+            print("\n Subsampling to 50,000 rows for DBSCAN & t-SNE to save memory...")
+            
+            if 'label' in df.columns:
+                y = df['label'].values
+                pos_idx = np.where(y == 1)[0]
+                unl_idx = np.where(y != 1)[0]
+                
+                n_pos_to_keep = min(len(pos_idx), 50000)
+                n_unl_to_keep = 50000 - n_pos_to_keep
+                
+                np.random.seed(42)
+                sampled_pos = np.random.choice(pos_idx, n_pos_to_keep, replace=False)
+                sampled_unl = np.random.choice(unl_idx, n_unl_to_keep, replace=False)
+                
+                sub_idx = np.concatenate([sampled_pos, sampled_unl])
+                np.random.shuffle(sub_idx) 
+            else:
+                np.random.seed(42)
+                sub_idx = np.random.choice(X_scaled.shape[0], 50000, replace=False)
+                
             X_run = X_scaled[sub_idx]
             cluster_labels_run = cluster_labels[sub_idx]
             run_indices = saved_indices[sub_idx]
+            X_pca_run = X_pca[sub_idx]
         else:
             X_run = X_scaled
             cluster_labels_run = cluster_labels
             run_indices = saved_indices
+            X_pca_run = X_pca
+        
         
         ## DBSCAN
         print("\n Performing DBSCAN...")
@@ -246,19 +280,19 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
                               direction="increasing")
         optimal_eps = sorted_distances[kneedle.knee] if kneedle.knee else 4.0
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(sorted_distances)
+        plt.figure(figsize=(10, 6), facecolor='white')
+        plt.plot(sorted_distances, color=sns.color_palette("tab10")[0])
         if kneedle.knee:
             plt.axhline(y=optimal_eps, 
-                        color='r', 
+                        color=sns.color_palette("tab10")[1], 
                         linestyle='--', 
                         label=f'Optimal eps: {optimal_eps:.2f}')
             plt.axvline(x=kneedle.knee, 
-                        color='r', 
+                        color=sns.color_palette("tab10")[1], 
                         linestyle='--')
             plt.legend()
         plt.ylabel('Epsilon (eps) distance')
-        plt.tight_layout() # Fixes cut-off axis labels
+        plt.tight_layout() 
         plt.savefig(RESULTS_DIR / f"plots/dbscan_k_distance_{name}.svg", bbox_inches='tight')
         plt.savefig(RESULTS_DIR / f"plots/dbscan_k_distance_{name}.png", dpi=300, bbox_inches='tight')
         plt.close()
@@ -291,10 +325,9 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
             
             rf_dbscan_importances.to_csv(RESULTS_DIR / f"metrics/dbscan_rf_importances_{name}.csv")
             
-            plt.figure(figsize=(10, 8))
-            sns.barplot(x=rf_dbscan_importances.head(20).values, y=rf_dbscan_importances.head(20).index, palette='magma')
-            plt.title(f'Top 20 Features Driving DBSCAN Clusters/Noise ({name})')
-            plt.xlabel('Random Forest Feature Importance')
+            plt.figure(figsize=(10, 8), facecolor='white')
+            sns.barplot(x=rf_dbscan_importances.head(20).values, y=rf_dbscan_importances.head(20).index, color=sns.color_palette("tab10")[0])
+            plt.xlabel('RF feature importance')
             plt.tight_layout()
             plt.savefig(RESULTS_DIR / f"plots/dbscan_rf_importance_{name}.svg", bbox_inches='tight')
             plt.savefig(RESULTS_DIR / f"plots/dbscan_rf_importance_{name}.png", dpi=300, bbox_inches='tight')
@@ -311,14 +344,42 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         
         tsne_results = tsne.fit_transform(X_run)
         
-        plt.figure(figsize=(10, 8))
+        plt.figure(figsize=(10, 8), facecolor='white')
         sns.scatterplot(x=tsne_results[:, 0], 
                         y=tsne_results[:, 1],                         
                         hue=cluster_labels_run, 
-                        palette='Set1', 
+                        palette='Dark2', 
                         s=60, alpha=0.7)
-        plt.savefig(RESULTS_DIR / f"plots/tsne_clusters_{name}.svg", bbox_inches='tight')
-        plt.savefig(RESULTS_DIR / f"plots/tsne_clusters_{name}.png", dpi=300, bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f"plots/tsne_kmeans_{name}.svg", bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f"plots/tsne_kmeans_{name}.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        plt.figure(figsize=(10, 8), facecolor='white')
+        unique_dbscan_labels = sorted(list(set(clusters_dbscan)))
+        n_clusters = len([l for l in unique_dbscan_labels if l != -1])
+        dbscan_palette = sns.color_palette("Dark2", n_clusters)
+        if -1 in unique_dbscan_labels:
+            dbscan_palette.insert(0, (0.7, 0.7, 0.7)) 
+            
+        sns.scatterplot(x=tsne_results[:, 0], 
+                        y=tsne_results[:, 1],                         
+                        hue=clusters_dbscan, 
+                        palette=dbscan_palette, 
+                        s=60, alpha=0.7)
+        plt.savefig(RESULTS_DIR / f"plots/tsne_dbscan_{name}.svg", bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f"plots/tsne_dbscan_{name}.png", dpi=300, bbox_inches='tight')
+        plt.close()
+
+        plt.figure(figsize=(10, 8), facecolor='white')
+        sns.scatterplot(x=X_pca_run[:, 0], 
+                        y=X_pca_run[:, 1],                         
+                        hue=clusters_dbscan, 
+                        palette=dbscan_palette, 
+                        s=60, alpha=0.7)
+        plt.xlabel(f'PC1 ({pc1_var:.1f}%)')
+        plt.ylabel(f'PC2 ({pc2_var:.1f}%)')
+        plt.savefig(RESULTS_DIR / f"plots/pca_dbscan_{name}.svg", bbox_inches='tight')
+        plt.savefig(RESULTS_DIR / f"plots/pca_dbscan_{name}.png", dpi=300, bbox_inches='tight')
         plt.close()
         
         unsupervised_summary.append({
@@ -332,7 +393,7 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
         
         labels_df = pd.DataFrame({
             
-            'kmeans_cluster': cluster_labels_run,             
+            'kmeans_cluster': cluster_labels_run,              
             'dbscan_cluster': clusters_dbscan,
             'tsne_1': tsne_results[:, 0],
             'tsne_2': tsne_results[:, 1]            
@@ -349,6 +410,64 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
     joblib.dump(results, RESULTS_DIR / "models/unsupervised_results.pkl")
     
     return results
+
+
+def generate_all_cluster_profiles(train_datasets, top_n=15):
+    print("\n" + "="*50)
+    print("   Generating profiles for K-Means & DBSCAN   ")
+    print("=" * 50)
+    
+    for name, df in train_datasets.items():
+        print(f"\nProfiling clusters for: {name}")
+        
+        labels_path = RESULTS_DIR / f"metrics/unsupervised_labels_and_tsne_{name}.csv"
+        if not labels_path.exists():
+            print(f" Skipping {name}: labels file not found.")
+            continue
+            
+        labels_df = pd.read_csv(labels_path, index_col=0)
+        
+        metadata_cols = ['label', 'User_input']
+        features_df = df.drop(columns=[c for c in metadata_cols if c in df.columns])
+        combined_df = features_df.join(labels_df, how='inner')
+        
+        algorithms = ['kmeans', 'dbscan']
+        
+        for algo in algorithms:
+            importance_path = RESULTS_DIR / f"metrics/{algo}_rf_importances_{name}.csv"
+            
+            if not importance_path.exists():
+                print(f" Skipping {algo.upper()}: RF importances not found.")
+                continue
+                
+            try:
+                rf_importances = pd.read_csv(importance_path, index_col=0)
+                if isinstance(rf_importances, pd.DataFrame):
+                    rf_importances = rf_importances.iloc[:, 0]
+                
+                top_features = rf_importances.head(top_n).index.tolist()
+                
+                cluster_col = f"{algo}_cluster"
+                centroids = combined_df.groupby(cluster_col)[top_features].mean().T
+                
+                centroids.columns = [f"cluster_{c}_mean" for c in centroids.columns]
+                
+                profile_df = centroids.copy()
+                profile_df['RF_importance_score'] = rf_importances.loc[top_features].values
+                
+                cluster_cols = [c for c in profile_df.columns if 'cluster_' in c]
+                profile_df['dominant_cluster'] = profile_df[cluster_cols].idxmax(axis=1)
+                
+                cols = ['dominant_cluster', 'RF_importance_score'] + cluster_cols
+                profile_df = profile_df[cols]
+                
+                save_path = RESULTS_DIR / f"metrics/{algo}_cluster_profiles_{name}.csv"
+                profile_df.to_csv(save_path)
+                
+                print(f" Saved {algo.upper()} profiles to: {save_path}")
+                
+            except Exception as e:
+                print(f" Error processing {algo.upper()} for {name}: {str(e)}")
 
 
 def create_pca_selected_dataset(X_train, X_test, fitted_pca, n_components_to_evaluate=5, keep_ratio=0.7):
@@ -428,90 +547,97 @@ def expand_datasets_with_unsupervised_features(train_datasets, test_datasets, un
     return expanded_train, expanded_test
 
 
-def run_pu_learning_analysis(train_datasets, test_datasets):
+def get_recall_at_k(y_true, y_probs, k_percent, pos_label=1):
+    k_count = max(1, int(len(y_probs) * k_percent))
+    
+    top_k_indices = np.argsort(y_probs)[::-1][:k_count]
+    
+    if isinstance(y_true, pd.Series):
+        true_pos_in_top_k = np.sum(y_true.iloc[top_k_indices] == pos_label)
+    else:
+        true_pos_in_top_k = np.sum(y_true[top_k_indices] == pos_label)
+        
+    total_positives = np.sum(y_true == pos_label)
+    
+    if total_positives == 0:
+        return 0.0
+    return true_pos_in_top_k / total_positives
+
+
+def run_comprehensive_tournament(all_train_datasets):
     print("\n" + "="*50)
-    print("      Starting PU analysis       ")
+    print("  Base estimator & Dataset tournament   ")
     print("=" * 50)
-    results = {}
-    pu_summary = []
     
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    estimators_to_test = {
+        'HistGradientBoosting': HistGradientBoostingClassifier(random_state=42),
+        'LightGBM': LGBMClassifier(random_state=42, n_jobs=1), 
+        'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1),
+        'ExtraTrees': ExtraTreesClassifier(n_estimators=100, random_state=42, n_jobs=1)
+    }
     
-    for name in train_datasets.keys():
+    cv_strategy = PUStratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    tournament_results = []
+    
+    for dataset_name, df_train in all_train_datasets.items():
+        print(f"\n[ Evaluating dataset: {dataset_name} ]")
         
-        print(f"\n Processing: {name}")
-        results[name] = {}
-        
-        X_train = train_datasets[name].copy()
-        X_test = test_datasets[name].copy()
-        
+        X_train = df_train.copy()
         y_train = X_train.pop('label')
-        y_test = X_test.pop('label')
-        
-        test_identifiers = X_test['User_input'] if 'User_input' in X_test.columns else X_test.index
         
         metadata_cols = ['User_input']
         X_train = X_train.drop(columns=metadata_cols, errors='ignore')
-        X_test = X_test.drop(columns=metadata_cols, errors='ignore')
         
-        print(" Running 5-Fold stratified cross-validation...")
-        cv_auprc_scores = []
-        
-        for fold, (train_idx, val_idx) in enumerate(skf.split(X_train, y_train)):
-            X_cv_train, X_cv_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
-            y_cv_train, y_cv_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+        for est_name, base_est in estimators_to_test.items():
+            print(f" Testing {est_name}...", end=" ")
+            start_time = time.time()
             
-            base_estimator = HistGradientBoostingClassifier(random_state=42)
-            cv_model = BaggingPuClassifier(estimator=base_estimator, n_estimators=50, n_jobs=-1, random_state=42)
-            cv_model.fit(X_cv_train, y_cv_train)
+            pu_model = BaggingPuClassifier(estimator=base_est, n_estimators=50, n_jobs=-1, random_state=42)
             
-            probs_cv = cv_model.predict_proba(X_cv_val)[:, 1]
-            cv_auprc_scores.append(average_precision_score(y_cv_val, probs_cv))
+            fold_scores_01 = []
+            fold_scores_05 = []
+            fold_scores_10 = []
             
-        mean_cv_auprc = np.mean(cv_auprc_scores)
-        std_cv_auprc = np.std(cv_auprc_scores)
-            
-        print(" Training final model on entire 80% Train set...")
-        base_estimator = HistGradientBoostingClassifier(random_state=42)
-        final_pu_model = BaggingPuClassifier(estimator=base_estimator, n_estimators=50, n_jobs=-1, random_state=42)
-        
-        final_pu_model.fit(X_train, y_train)
-        
-        probs = final_pu_model.predict_proba(X_test)[:, 1]
-        preds = final_pu_model.predict(X_test)
-        preds = np.where(preds == 0, -1, preds)
-        
-        test_auprc = average_precision_score(y_test, probs)
-        
-        report = classification_report(y_test, preds, target_names=['Unlabeled (-1)', 'Positive (1)'])
-        print(report)
+            for train_idx, val_idx in cv_strategy.split(X_train, y_train):
+                X_cv_train, X_cv_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
+                y_cv_train, y_cv_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
                 
-        joblib.dump(final_pu_model, RESULTS_DIR / f"models/pu_model_{name}.pkl")
-        
-        with open(RESULTS_DIR / f"metrics/pu_classification_report_{name}.txt", "w") as f:
-            f.write(report)
+                pu_model.fit(X_cv_train, y_cv_train)
+                probs_cv = pu_model.predict_proba(X_cv_val)[:, 1]
+                
+                fold_scores_01.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.001))
+                fold_scores_05.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.005))
+                fold_scores_10.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.010))
+                
+            mean_score_01 = np.mean(fold_scores_01)
+            mean_score_05 = np.mean(fold_scores_05)
+            mean_score_10 = np.mean(fold_scores_10)
+            exec_time = time.time() - start_time
             
-        pu_summary.append({
-            'strategy': name,
-            'cv_mean_auprc': mean_cv_auprc,
-            'cv_std_auprc': std_cv_auprc,
-            'test_auprc': test_auprc
-        })
-        
-        predictions_df = pd.DataFrame({
-            'User_input': test_identifiers,
-            'true_label': y_test,
-            'predicted_prob': probs,
-            'predicted_label': preds
-        })
-        predictions_df.to_csv(RESULTS_DIR / f"metrics/pu_test_predictions_{name}.csv", index=False)
-        
-        results[name]['pu_learning'] = final_pu_model
+            print(f"R@0.1%: {mean_score_01:.1%} | R@0.5%: {mean_score_05:.1%} | R@1.0%: {mean_score_10:.1%} ({exec_time:.1f}s)")
+            
+            tournament_results.append({
+                'dataset': dataset_name,
+                'estimator': est_name,
+                'recall_at_01_pct': mean_score_01,
+                'recall_at_05_pct': mean_score_05,
+                'recall_at_10_pct': mean_score_10,
+                'execution_time_sec': round(exec_time, 1)
+            })
+            
+    results_df = pd.DataFrame(tournament_results)
+    results_df = results_df.sort_values(by='recall_at_05_pct', ascending=False)
+    
+    print("\n" + "="*50)
+    print("   Tournament complete - Top 5 csombinations   ")
+    print("=" * 50)
+    print(results_df.head(5).to_string(index=False))
+    
+    results_df.to_csv(RESULTS_DIR / "metrics/master_tournament_rankings.csv", index=False)
+    print(f"\nFull tournament rankings saved to: {RESULTS_DIR}/metrics/master_tournament_rankings.csv")
+    
+    return results_df
 
-    pu_summary_df = pd.DataFrame(pu_summary)
-    pu_summary_df.to_csv(RESULTS_DIR / f"metrics/pu_summary_metrics.csv", index=False)
-
-    return results
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -530,10 +656,14 @@ if __name__ == "__main__":
     
     unsupervised_results = run_unsupervised_analysis(train_sets, max_k_elbow=10)
     
+    generate_all_cluster_profiles(train_sets, top_n=15)
+    
     expanded_train_sets, expanded_test_sets = expand_datasets_with_unsupervised_features(
             train_sets, 
             test_sets, 
             unsupervised_results
         )    
     
-    supervised_results = run_pu_learning_analysis(expanded_train_sets, expanded_test_sets)
+    all_training_datasets = {**train_sets, **expanded_train_sets}
+    
+    tournament_results_df = run_comprehensive_tournament(all_training_datasets)

@@ -38,7 +38,6 @@ CREATE TABLE dim_populational (
     AA_pos INTEGER,
 );
 
--- Insert data into Population table
 INSERT INTO dim_populational 
 SELECT 
     User_input, CHROM, POS, REF, ALT, avsnp151, "Func.refGene", "Gene.refGene", Allele, Annotation, Annotation_Impact, 
@@ -88,7 +87,6 @@ CREATE TABLE dim_variant_protein_impact (
     Position_in_structures VARCHAR,
 );
 
--- Insert data into Variant Protein Impact table
 INSERT INTO dim_variant_protein_impact 
 SELECT 
     User_input, Chromosome, Coordinate, ID, Reference_allele, Alternative_allele, Notes, 
@@ -132,7 +130,6 @@ CREATE TABLE dim_pharmacogenomics (
     "Comparison Metabolizer types" VARCHAR
 );
 
--- Insert data into Pharmacogenomics table
 INSERT INTO dim_pharmacogenomics 
 SELECT 
     User_input, "Variant Annotation ID", "Variant/Haplotypes", Gene, "Drug(s)", 
