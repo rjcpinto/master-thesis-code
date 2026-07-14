@@ -24,6 +24,7 @@ from lightgbm import LGBMClassifier
 from pulearn import BaggingPuClassifier, PUStratifiedKFold
 import pathlib
 from pathlib import Path
+import shap
 
 """
 Different imputation strategies for handling missing values in the dataset:
@@ -412,9 +413,10 @@ def run_unsupervised_analysis(train_datasets, max_k_elbow=10):
     return results
 
 
-def generate_all_cluster_profiles(train_datasets, top_n=15):
+
+def generate_all_cluster_profiles(train_datasets, unsupervised_results, top_n=15):
     print("\n" + "="*50)
-    print("   Generating profiles for K-Means & DBSCAN   ")
+    print("   Generating SHAP profiles for K-Means & DBSCAN   ")
     print("=" * 50)
     
     for name, df in train_datasets.items():
@@ -429,45 +431,96 @@ def generate_all_cluster_profiles(train_datasets, top_n=15):
         
         metadata_cols = ['label', 'User_input']
         features_df = df.drop(columns=[c for c in metadata_cols if c in df.columns])
-        combined_df = features_df.join(labels_df, how='inner')
+        
+        features_aligned = features_df.loc[labels_df.index]
+        
+        scaler = unsupervised_results[name]['scaler']
+        X_scaled = pd.DataFrame(
+            scaler.transform(features_aligned), 
+            columns=features_aligned.columns, 
+            index=features_aligned.index
+        )
         
         algorithms = ['kmeans', 'dbscan']
         
         for algo in algorithms:
-            importance_path = RESULTS_DIR / f"metrics/{algo}_rf_importances_{name}.csv"
-            
-            if not importance_path.exists():
-                print(f" Skipping {algo.upper()}: RF importances not found.")
+            if algo not in unsupervised_results[name] or 'rf_explainer_model' not in unsupervised_results[name][algo]:
+                print(f" Skipping {algo.upper()}: RF model not found in unsupervised_results.")
                 continue
                 
-            try:
-                rf_importances = pd.read_csv(importance_path, index_col=0)
-                if isinstance(rf_importances, pd.DataFrame):
-                    rf_importances = rf_importances.iloc[:, 0]
+            print(f" -> Extracting SHAP directions and means for {algo.upper()}...")
+            rf_model = unsupervised_results[name][algo]['rf_explainer_model']
+            
+            X_shap_sample = shap.sample(X_scaled, min(5000, len(X_scaled)), random_state=42)
+            
+            explainer = shap.TreeExplainer(rf_model)
+            shap_values = explainer.shap_values(X_shap_sample)
+            
+            is_list = isinstance(shap_values, list)
+            
+            rf_classes = list(rf_model.classes_) 
+            
+            all_cluster_stats = []
+            
+            for idx, c in enumerate(rf_classes):                    
+                if is_list:
+                    class_shap_vals = shap_values[idx]
+                else:
+                    class_shap_vals = shap_values[:, :, idx] 
                 
-                top_features = rf_importances.head(top_n).index.tolist()
+                cluster_mask = (labels_df[f"{algo}_cluster"] == c)
                 
-                cluster_col = f"{algo}_cluster"
-                centroids = combined_df.groupby(cluster_col)[top_features].mean().T
+                for col_idx, col_name in enumerate(X_scaled.columns):
+                    importance = np.abs(class_shap_vals[:, col_idx]).mean()
+                    
+                    feature_vals = X_shap_sample.iloc[:, col_idx].values
+                    s_vals = class_shap_vals[:, col_idx]
+                    
+                    if np.std(feature_vals) == 0 or np.std(s_vals) == 0:
+                        corr = 0.0
+                    else:
+                        corr = np.corrcoef(feature_vals, s_vals)[0, 1]
+                    
+                    if np.isnan(corr) or importance == 0:
+                        direction = "Neutral/Zero Variance"
+                    elif corr > 0.3:
+                        direction = "High values drive cluster"
+                    elif corr < -0.3:
+                        direction = "Low values drive cluster"
+                    else:
+                        direction = "Complex/Non-linear"
+                        
+                    raw_cluster_mean = features_aligned.loc[cluster_mask, col_name].mean()
+                    raw_global_mean = features_aligned[col_name].mean()
+                        
+                    all_cluster_stats.append({
+                        'Cluster': c,
+                        'Feature': col_name,
+                        'SHAP_Importance': importance,
+                        'Direction': direction,
+                        'Cluster_Mean': raw_cluster_mean,
+                        'Global_Mean': raw_global_mean,
+                        'Correlation': corr
+                    })
+            
+            if not all_cluster_stats:
+                continue
                 
-                centroids.columns = [f"cluster_{c}_mean" for c in centroids.columns]
+            stats_df = pd.DataFrame(all_cluster_stats)
+            
+            for c in rf_classes:
+                if c == -1: continue
                 
-                profile_df = centroids.copy()
-                profile_df['RF_importance_score'] = rf_importances.loc[top_features].values
+                c_df = stats_df[stats_df['Cluster'] == c].sort_values(by='SHAP_Importance', ascending=False)
                 
-                cluster_cols = [c for c in profile_df.columns if 'cluster_' in c]
-                profile_df['dominant_cluster'] = profile_df[cluster_cols].idxmax(axis=1)
+                c_df_top = c_df.head(top_n)
                 
-                cols = ['dominant_cluster', 'RF_importance_score'] + cluster_cols
-                profile_df = profile_df[cols]
+                save_path = RESULTS_DIR / f"metrics/{algo}_cluster_{c}_detailed_profile_{name}.csv"
+                c_df_top.to_csv(save_path, index=False)
                 
-                save_path = RESULTS_DIR / f"metrics/{algo}_cluster_profiles_{name}.csv"
-                profile_df.to_csv(save_path)
-                
-                print(f" Saved {algo.upper()} profiles to: {save_path}")
-                
-            except Exception as e:
-                print(f" Error processing {algo.upper()} for {name}: {str(e)}")
+            print(f"    Saved rich SHAP profiles to metrics/{algo}_cluster_[X]_detailed_profile_{name}.csv")
+            
+            
 
 
 def create_pca_selected_dataset(X_train, X_test, fitted_pca, n_components_to_evaluate=5, keep_ratio=0.7):
@@ -656,7 +709,7 @@ if __name__ == "__main__":
     
     unsupervised_results = run_unsupervised_analysis(train_sets, max_k_elbow=10)
     
-    generate_all_cluster_profiles(train_sets, top_n=15)
+    generate_all_cluster_profiles(train_sets, unsupervised_results, top_n=15)
     
     expanded_train_sets, expanded_test_sets = expand_datasets_with_unsupervised_features(
             train_sets, 
