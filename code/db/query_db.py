@@ -2,6 +2,10 @@ import duckdb
 import pandas as pd
 import sys
 from prompt_toolkit import prompt
+from pathlib import Path
+
+OUT_DIR = Path("datasets_final")
+DB_DIR = Path("database")
 
 def query_database(con, ml_query, output_name, is_show_tables):
     try:
@@ -9,16 +13,14 @@ def query_database(con, ml_query, output_name, is_show_tables):
 
         print(f"\n Query successful! Extracted {len(ml_dataframe)} rows and {len(ml_dataframe.columns)} features.")
         if is_show_tables == "yes":
-            # Print the whole thing if it's just a structural table
             print(ml_dataframe)
         else:
-            # Only print the head if it's a massive ML dataset
             print(ml_dataframe.head())
                 
         want_save = input("\nDo you want to save this dataset to a CSV file? (yes/no): ").strip().lower()
                 
         if want_save == 'yes':
-            out_path = f'/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/{output_name}.csv'
+            out_path = OUT_DIR / f"{output_name}.csv"
                     
             ml_dataframe.to_csv(
                 out_path, 
@@ -40,7 +42,7 @@ def query_database(con, ml_query, output_name, is_show_tables):
         return False
 
 def extract_ml_dataset(output_name, db_name):
-    db_path = f"/Users/ricardo/Desktop/MECD/2ndYear/Thesis/database/{db_name}.db"
+    db_path = DB_DIR / f"{db_name}.db"
     
     try:
         con = duckdb.connect(db_path, read_only=True)

@@ -1,10 +1,14 @@
 import duckdb
 import pandas as pd
 import sys
-from prompt_toolkit import prompt
+from pathlib import Path
+
+
+DB_DIR = Path("database")
+DATASETS_DIR = Path("datasets_final")
 
 def query_database(query_file, output_name, db_name):
-    db_path = f"/Users/ricardo/Desktop/MECD/2ndYear/Thesis/database/{db_name}.db"
+    db_path = DB_DIR / f"{db_name}.db"
     
     try:
         con = duckdb.connect(db_path, read_only=True)
@@ -25,7 +29,7 @@ def query_database(query_file, output_name, db_name):
         want_save = input("\nDo you want to save this dataset to a CSV file? (yes/no): ").strip().lower()
                 
         if want_save == 'yes':
-            out_path = f'/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/{output_name}.csv'
+            out_path = DATASETS_DIR / f"{output_name}.csv"
                     
             ml_dataframe.to_csv(
                 out_path, 
@@ -52,8 +56,8 @@ def query_database(query_file, output_name, db_name):
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: python3 query_db.py [query_file] [output_name] [db_name]")
-        print("Example: python3 query_db.py query.sql ml_dataset data_warehouse")
+        print("Usage: python3 query_db_query_file.py [query_file] [output_name] [db_name]")
+        print("Example: python3 query_db_query_file.py query.sql ml_dataset data_warehouse")
         sys.exit(1)
 
     query_file = sys.argv[1]

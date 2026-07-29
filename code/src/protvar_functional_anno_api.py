@@ -1,7 +1,6 @@
 import requests
 import argparse
 import sys
-import time
 
 def retrieve_functional_anno(line):
     """Retrieve functional annotations for each variant in the DataFrame via ProtVar API."""
@@ -14,7 +13,6 @@ def retrieve_functional_anno(line):
     url = f"https://www.ebi.ac.uk/ProtVar/api/function/{accession}/{position}?variantAA={variantAA}"
     headers = {"accept": "application/json"}
             
-    # Send status logs to STDERR so they don't corrupt your output file
     print(f"Retrieving functional annotation for {variant}...", file=sys.stderr)
     
     response = requests.get(url, headers=headers)
@@ -22,7 +20,6 @@ def retrieve_functional_anno(line):
     if response.status_code == 200:
         return response.json()
     else:
-        # Send errors to STDERR as well
         print(f"Error in variant {variant}: {response.status_code}: {response.text}", file=sys.stderr)
         return None
 

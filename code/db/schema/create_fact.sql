@@ -1,6 +1,6 @@
 
 CREATE TABLE fact_metrics (
-    User_input VARCHAR,
+    User_input VARCHAR PRIMARY KEY,
     Polyphen2_HVAR_pred FLOAT,
     Polyphen2_HDIV_pred FLOAT,
     SIFT_converted_rankscore FLOAT,

@@ -10,19 +10,20 @@ import seaborn as sns
 from kneed import KneeLocator
 warnings.filterwarnings('ignore')
 from sklearn.impute import KNNImputer, SimpleImputer
-from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, average_precision_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier, ExtraTreesClassifier
 from lightgbm import LGBMClassifier
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from pulearn import BaggingPuClassifier, PUStratifiedKFold
-import pathlib
 from pathlib import Path
 import shap
 
@@ -76,7 +77,7 @@ def generate_imputed_datasets(df_train, df_test):
     print("v2. MICE Imputed datasets")
     X_train_scaled_mice = scaler.fit_transform(df_train[num_cols])
     X_test_scaled_mice = scaler.transform(df_test[num_cols])
-    mice = IterativeImputer(max_iter=10, random_state=42)
+    mice = IterativeImputer(max_iter=20, random_state=42)
     datasets_train['v2'] = df_train.copy()
     datasets_test['v2'] = df_test.copy()
     datasets_train['v2'][num_cols] = scaler.inverse_transform(mice.fit_transform(X_train_scaled_mice))
@@ -88,11 +89,12 @@ def generate_imputed_datasets(df_train, df_test):
     datasets_test['v3'] = df_test.copy()
     datasets_train['v3'][num_cols] = median_imp.fit_transform(datasets_train['v3'][num_cols])
     datasets_test['v3'][num_cols] = median_imp.transform(datasets_test['v3'][num_cols])
-    
+    joblib.dump(median_imp, RESULTS_DIR / "models/median_imputer.pkl")
+
     print("\nSaving generated datasets to disk...")
     for version in datasets_train.keys():
-        datasets_train[version].to_csv(RESULTS_DIR / f"train_{version}.csv", index=False)
-        datasets_test[version].to_csv(RESULTS_DIR / f"test_{version}.csv", index=False)
+        datasets_train[version].to_csv(RESULTS_DIR / f"data/train_{version}.csv", index=False)
+        datasets_test[version].to_csv(RESULTS_DIR / f"data/test_{version}.csv", index=False)
 
     return datasets_train, datasets_test
 
@@ -522,84 +524,6 @@ def generate_all_cluster_profiles(train_datasets, unsupervised_results, top_n=15
             
             
 
-
-def create_pca_selected_dataset(X_train, X_test, fitted_pca, n_components_to_evaluate=5, keep_ratio=0.7):
-    top_loadings = np.abs(fitted_pca.components_[:n_components_to_evaluate])
-    feature_importance = np.sum(top_loadings, axis=0)
-    
-    n_features = X_train.shape[1]
-    n_keep = int(n_features * keep_ratio)
-    top_indices = np.argsort(feature_importance)[-n_keep:]
-    
-    selected_features = X_train.columns[top_indices]
-    
-    return X_train[selected_features].copy(), X_test[selected_features].copy()
-
-
-def create_kmeans_distance_dataset(X_train, X_test, fitted_pca, fitted_kmeans):
-    X_train_pca = fitted_pca.transform(X_train)
-    X_test_pca = fitted_pca.transform(X_test)
-    
-    train_distances = fitted_kmeans.transform(X_train_pca)
-    test_distances = fitted_kmeans.transform(X_test_pca)
-    
-    optimal_k = fitted_kmeans.n_clusters
-    distance_cols = [f'dist_to_cluster_{i}' for i in range(optimal_k)]
-        
-    return pd.DataFrame(train_distances, columns=distance_cols, index=X_train.index), \
-           pd.DataFrame(test_distances, columns=distance_cols, index=X_test.index)
-
-
-def expand_datasets_with_unsupervised_features(train_datasets, test_datasets, unsupervised_results):
-    print("\n" + "="*50)
-    print("   Generating Unsupervised feature datasets  ")
-    print("=" * 50)
-    
-    expanded_train = {}
-    expanded_test = {}
-    
-    valid_datasets = list(train_datasets.keys()) 
-    
-    for name in valid_datasets:
-        print(f"\nProcessing {name}:")
-        
-        fitted_pca = unsupervised_results[name]['pca_model']
-        fitted_kmeans = unsupervised_results[name]['kmeans']['model']
-        
-        scaler = unsupervised_results[name]['scaler'] 
-        
-        df_train = train_datasets[name].copy()
-        df_test = test_datasets[name].copy()
-        
-        metadata_cols = ['label', 'User_input'] if 'User_input' in df_train.columns else ['label']
-        train_meta = df_train[metadata_cols]
-        test_meta = df_test[metadata_cols]
-        
-        X_train = df_train.drop(columns=metadata_cols, errors='ignore')
-        X_test = df_test.drop(columns=metadata_cols, errors='ignore')
-        
-        X_train_scaled = pd.DataFrame(scaler.transform(X_train), columns=X_train.columns, index=X_train.index)
-        X_test_scaled = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns, index=X_test.index)
-        
-        X_train_pca, X_test_pca = create_pca_selected_dataset(X_train_scaled, X_test_scaled, fitted_pca)
-        X_train_dist, X_test_dist = create_kmeans_distance_dataset(X_train_scaled, X_test_scaled, fitted_pca, fitted_kmeans)
-        
-        X_train_pca = X_train_pca.add_suffix('_pca_sel')
-        X_test_pca = X_test_pca.add_suffix('_pca_sel')
-        
-        df_train_expanded = pd.concat([X_train, X_train_pca, X_train_dist, train_meta], axis=1)
-        df_test_expanded = pd.concat([X_test, X_test_pca, X_test_dist, test_meta], axis=1)
-        
-        expanded_name = f"{name}_expanded"
-        expanded_train[expanded_name] = df_train_expanded
-        expanded_test[expanded_name] = df_test_expanded
-        
-        df_train_expanded.to_csv(RESULTS_DIR / f"data/train_{expanded_name}.csv", index=False)
-        df_test_expanded.to_csv(RESULTS_DIR / f"data/test_{expanded_name}.csv", index=False)
-        
-    return expanded_train, expanded_test
-
-
 def get_recall_at_k(y_true, y_probs, k_percent, pos_label=1):
     k_count = max(1, int(len(y_probs) * k_percent))
     
@@ -617,17 +541,21 @@ def get_recall_at_k(y_true, y_probs, k_percent, pos_label=1):
     return true_pos_in_top_k / total_positives
 
 
+
 def run_comprehensive_tournament(all_train_datasets):
     print("\n" + "="*50)
     print("  Base estimator & Dataset tournament   ")
     print("=" * 50)
     
     estimators_to_test = {
-        'HistGradientBoosting': HistGradientBoostingClassifier(random_state=42),
-        'LightGBM': LGBMClassifier(random_state=42, n_jobs=1), 
-        'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1),
-        'ExtraTrees': ExtraTreesClassifier(n_estimators=100, random_state=42, n_jobs=1)
-    }
+    'LogisticRegression': LogisticRegression(random_state=42, max_iter=2000, n_jobs=1),
+    'HistGradientBoosting': HistGradientBoostingClassifier(random_state=42),
+    'LightGBM': LGBMClassifier(random_state=42, n_jobs=1), 
+    'XGBoost': XGBClassifier(random_state=42, n_jobs=1, eval_metric='logloss'),
+    'CatBoost': CatBoostClassifier(random_state=42, thread_count=1, verbose=0),    
+    'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1),
+    'ExtraTrees': ExtraTreesClassifier(n_estimators=100, random_state=42, n_jobs=1)
+}
     
     cv_strategy = PUStratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     tournament_results = []
@@ -650,6 +578,7 @@ def run_comprehensive_tournament(all_train_datasets):
             fold_scores_01 = []
             fold_scores_05 = []
             fold_scores_10 = []
+            fold_scores_pr_auc = [] 
             
             for train_idx, val_idx in cv_strategy.split(X_train, y_train):
                 X_cv_train, X_cv_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
@@ -661,13 +590,15 @@ def run_comprehensive_tournament(all_train_datasets):
                 fold_scores_01.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.001))
                 fold_scores_05.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.005))
                 fold_scores_10.append(get_recall_at_k(y_cv_val, probs_cv, k_percent=0.010))
+                fold_scores_pr_auc.append(average_precision_score(y_cv_val, probs_cv)) 
                 
             mean_score_01 = np.mean(fold_scores_01)
             mean_score_05 = np.mean(fold_scores_05)
             mean_score_10 = np.mean(fold_scores_10)
+            mean_pr_auc = np.mean(fold_scores_pr_auc)
             exec_time = time.time() - start_time
             
-            print(f"R@0.1%: {mean_score_01:.1%} | R@0.5%: {mean_score_05:.1%} | R@1.0%: {mean_score_10:.1%} ({exec_time:.1f}s)")
+            print(f"R@0.1%: {mean_score_01:.1%} | R@0.5%: {mean_score_05:.1%} | R@1.0%: {mean_score_10:.1%} | PR-AUC: {mean_pr_auc:.3f} ({exec_time:.1f}s)")
             
             tournament_results.append({
                 'dataset': dataset_name,
@@ -675,6 +606,7 @@ def run_comprehensive_tournament(all_train_datasets):
                 'recall_at_01_pct': mean_score_01,
                 'recall_at_05_pct': mean_score_05,
                 'recall_at_10_pct': mean_score_10,
+                'pr_auc': mean_pr_auc, 
                 'execution_time_sec': round(exec_time, 1)
             })
             
@@ -682,7 +614,7 @@ def run_comprehensive_tournament(all_train_datasets):
     results_df = results_df.sort_values(by='recall_at_05_pct', ascending=False)
     
     print("\n" + "="*50)
-    print("   Tournament complete - Top 5 csombinations   ")
+    print("   Tournament complete - Top 5 combinations   ")
     print("=" * 50)
     print(results_df.head(5).to_string(index=False))
     
@@ -709,14 +641,8 @@ if __name__ == "__main__":
     
     unsupervised_results = run_unsupervised_analysis(train_sets, max_k_elbow=10)
     
-    generate_all_cluster_profiles(train_sets, unsupervised_results, top_n=15)
+    generate_all_cluster_profiles(train_sets, unsupervised_results, top_n=15) 
     
-    expanded_train_sets, expanded_test_sets = expand_datasets_with_unsupervised_features(
-            train_sets, 
-            test_sets, 
-            unsupervised_results
-        )    
-    
-    all_training_datasets = {**train_sets, **expanded_train_sets}
+    all_training_datasets = {**train_sets}
     
     tournament_results_df = run_comprehensive_tournament(all_training_datasets)

@@ -7,7 +7,7 @@ import numpy as np
 import warnings
 warnings.filterwarnings('ignore')
 from sklearn.model_selection import RandomizedSearchCV
-from sklearn.metrics import make_scorer
+from sklearn.metrics import make_scorer, average_precision_score
 from sklearn.ensemble import RandomForestClassifier
 from pulearn import BaggingPuClassifier, PUStratifiedKFold
 from pathlib import Path
@@ -84,10 +84,12 @@ def run_tuning_and_evaluation(X_train, y_train, X_test, y_test, test_identifiers
     recall_01 = get_recall_at_k(y_test, probs, 0.001)
     recall_05 = get_recall_at_k(y_test, probs, 0.005)
     recall_10 = get_recall_at_k(y_test, probs, 0.010)
+    pr_auc = average_precision_score(y_test, probs)
     
     print(f" Final Test Recall @ 0.1%: {recall_01:.1%}")
     print(f" Final Test Recall @ 0.5%: {recall_05:.1%}")
     print(f" Final Test Recall @ 1.0%: {recall_10:.1%}")
+    print(f" Final Test PR-AUC: {pr_auc:.3f}")
     
     joblib.dump(best_model, RESULTS_DIR / "models/final_tuned_pu_rf_model.pkl")
     print(f"\nFinal model saved to: {RESULTS_DIR}/models/final_tuned_pu_rf_model.pkl")

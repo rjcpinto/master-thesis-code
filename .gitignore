@@ -16,6 +16,7 @@ database/
 # 2. RESULTS
 # -----------------------------------
 results/
+other_versions_results/
 
 # -----------------------------------
 # 3. NOTEBOOKS & PYTHON
@@ -26,6 +27,7 @@ __pycache__/
 venv/
 env/
 .env
+*using*
 
 # Ignoring intermediate Python scripts used by me
 *copy*

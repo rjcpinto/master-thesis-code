@@ -44,7 +44,7 @@ def download_request(input_id, email):
 
     if response.status_code == 200:
         print(f"Job initiated successfully!")
-        return response.json().get('id') # This returns your job/request ID
+        return response.json().get('id') 
     else:
         print(f"Error {response.status_code}: {response.text}")
         return None

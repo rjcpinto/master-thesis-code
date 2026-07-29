@@ -2,7 +2,6 @@ import sys
 import joblib
 import pandas as pd
 import numpy as np
-from sklearn.impute import SimpleImputer
 from pathlib import Path
 
 RESULTS_DIR = Path("results")
@@ -24,7 +23,7 @@ def run_discovery(input_file):
     X_unlabeled = unlabeled_df[num_cols].copy()
     
     print("Applying Median imputation to missing values...")
-    imputer = SimpleImputer(strategy='median')
+    imputer = joblib.load(RESULTS_DIR / "models/median_imputer.pkl")
     X_unlabeled_imputed = imputer.fit_transform(X_unlabeled)
     
     X_unlabeled = pd.DataFrame(X_unlabeled_imputed, columns=num_cols, index=X_unlabeled.index)

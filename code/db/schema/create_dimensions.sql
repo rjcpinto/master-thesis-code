@@ -1,7 +1,7 @@
 
 -- Population
 CREATE TABLE dim_populational (
-    User_input VARCHAR,
+    User_input VARCHAR PRIMARY KEY,
     CHROM VARCHAR,
     POS INTEGER,
     REF VARCHAR,
@@ -50,7 +50,7 @@ FROM read_csv('/Users/ricardo/Desktop/MECD/2ndYear/Thesis/datasets_final/pop_dat
 
 -- Variant-Protein impact
 CREATE TABLE dim_variant_protein_impact ( 
-    User_input VARCHAR,
+    User_input VARCHAR PRIMARY KEY,
     Chromosome VARCHAR,
     Coordinate INTEGER,
     ID VARCHAR,
