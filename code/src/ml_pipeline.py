@@ -10,6 +10,7 @@ import seaborn as sns
 from kneed import KneeLocator
 warnings.filterwarnings('ignore')
 from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.experimental import enable_iterative_imputer
 from sklearn.impute import IterativeImputer
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA

@@ -16,6 +16,7 @@ database/
 # 2. RESULTS
 # -----------------------------------
 results/
+results_v4/
 other_versions_results/
 
 # -----------------------------------
@@ -28,6 +29,7 @@ venv/
 env/
 .env
 *using*
+*code_thesis*
 
 # Ignoring intermediate Python scripts used by me
 *copy*

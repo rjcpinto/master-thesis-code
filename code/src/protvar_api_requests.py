@@ -109,6 +109,9 @@ if __name__ == "__main__":
         if state == "ready":
             print(f"Status: READY. The {filename} has finished processing.")
             break
+        elif state == "failed":
+            print(f"Status: FAILED. The {filename} could not be processed.")
+            exit(1)
         else:
             print(f"Status {filename}: {str(state).upper()}. Sleeping for 30 seconds...")
             time.sleep(30)
