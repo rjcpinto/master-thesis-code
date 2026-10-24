@@ -6,7 +6,7 @@ from pathlib import Path
 
 RESULTS_DIR = Path("results")
 
-def run_discovery(input_file):
+def run_discovery(input_file, output_file_name):
     print("\n" + "="*60)
     print("   Starting variant discovery...   ")
     print("=" * 60)
@@ -44,7 +44,7 @@ def run_discovery(input_file):
         'predicted_probability': probs
     }).sort_values(by='predicted_probability', ascending=False)
     
-    output_path = RESULTS_DIR / "metrics/top_putative_positives.csv"
+    output_path = RESULTS_DIR / f"metrics/{output_file_name}"
     results_df.to_csv(output_path, index=False)
     
     print("\n" + "="*60)
@@ -56,8 +56,8 @@ def run_discovery(input_file):
     print(results_df.head(10).to_string(index=False))
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python3 discover_positives.py <raw_combined_dataset.csv>")
+    if len(sys.argv) != 3:
+        print("Usage: python3 discover_positives.py <raw_combined_dataset.csv> <output_filename.csv>")
         sys.exit(1)
         
-    run_discovery(sys.argv[1])
+    run_discovery(sys.argv[1], sys.argv[2])

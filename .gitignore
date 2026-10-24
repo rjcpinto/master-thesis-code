@@ -27,6 +27,7 @@ __pycache__/
 *.pyc
 venv/
 env/
+code/notebooks/
 .env
 *using*
 *code_thesis*
@@ -70,3 +71,8 @@ Papers/
 Proposal/
 unsupervised_analysis.ipynb
 *RicardoPinto*
+*.pdf
+*.png
+*.svg
+*.docx
+*.drawio
