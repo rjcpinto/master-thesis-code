@@ -1,5 +1,3 @@
-# Prioritising putative ancestry-specific pharmacogenomic variants
-
 Code for the MSc dissertation *Comprehensive integration of genomic
 and proteomic datasets to empower machine learning for equitable discovery of drug mechanisms*, submitted for the **Master in Data Science and Engineering**, Faculdade de Engenharia da Universidade do Porto.
 
