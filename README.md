@@ -13,7 +13,7 @@ Pharmacogenomic knowledge remains concentrated in a relatively small set of well
 
 Because the absence of a documented pharmacogenomic association does not imply that a variant is functionally irrelevant, the problem is formulated as **positive–unlabelled (PU) learning** rather than conventional binary classification. Curated variants from ClinPGx serve as labelled positives, while the remaining missense variants identified in the 1000 Genomes Project are treated as unlabelled, rather than assumed to be negative examples.
 
-![Analysis pipeline]({fig/pipeline_schema_half.png/})
+![Analysis pipeline](https://github.com/rjcpinto/master-thesis-code/blob/main/fig/pipeline_schema_half.png)
 
 
 ## Repository structure
