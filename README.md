@@ -40,7 +40,6 @@ Because the absence of a documented pharmacogenomic association does not imply t
 │       └── discovery_positives.py           scoring of the unlabelled pool
 ├── envs/
 │   └── thesis_env.yml                       conda environment
-├── connect_googlecolab_locally.sh
-└── .gitignore
+└── connect_googlecolab_locally.sh
 ```
 
